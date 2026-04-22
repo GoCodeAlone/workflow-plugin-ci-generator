@@ -7,6 +7,10 @@ import (
 	sdk "github.com/GoCodeAlone/workflow/plugin/external/sdk"
 )
 
+// Version is set at build time via -ldflags
+// "-X github.com/GoCodeAlone/workflow-plugin-ci-generator/internal.Version=X.Y.Z"
+var Version = "dev"
+
 // ciGeneratorPlugin implements sdk.PluginProvider and sdk.StepProvider.
 type ciGeneratorPlugin struct{}
 
@@ -19,7 +23,7 @@ func NewCIGeneratorPlugin() sdk.PluginProvider {
 func (p *ciGeneratorPlugin) Manifest() sdk.PluginManifest {
 	return sdk.PluginManifest{
 		Name:        "workflow-plugin-ci-generator",
-		Version:     "0.1.0",
+		Version:     Version,
 		Author:      "GoCodeAlone",
 		Description: "CI/CD config generator for GitHub Actions, GitLab CI, Jenkins, and CircleCI",
 	}
