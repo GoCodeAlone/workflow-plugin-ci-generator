@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/contracts"
 	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/platforms"
 	sdk "github.com/GoCodeAlone/workflow/plugin/external/sdk"
 )
@@ -32,51 +33,35 @@ var registry = map[string]func() Generator{
 	PlatformCircleCI:      func() Generator { return platforms.NewCircleCIGenerator() },
 }
 
-// ciGenerateStep implements step.ci_generate.
-type ciGenerateStep struct {
-	name string
-}
-
-func newCIGenerateStep(name string, _ map[string]any) (*ciGenerateStep, error) {
-	return &ciGenerateStep{name: name}, nil
-}
-
-// Execute generates CI/CD config files for the specified platform.
-//
-// Config keys:
-//   - platform (string, required): github_actions | gitlab_ci | jenkins | circleci
-//   - output_dir (string, required): directory to write generated files into
-//   - infra_config (string): path to infra.yaml (default: "infra.yaml")
-//   - project_name (string): project/repo name (default: "my-project")
-//   - runner (string): runner label for GHA (default: "self-hosted, Linux, X64")
-//   - default_branch (string): main branch name (default: "main")
-func (s *ciGenerateStep) Execute(ctx context.Context, _ map[string]any, _ map[string]map[string]any, current map[string]any, _ map[string]any, config map[string]any) (*sdk.StepResult, error) {
-	platform := resolveString("platform", current, config)
+// ExecuteCIGenerate generates CI/CD config files for the specified platform.
+func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]) (*sdk.TypedStepResult[*contracts.CIGenerateOutput], error) {
+	_ = ctx
+	platform := resolveTypedString(req.Input.GetPlatform(), req.Config.GetPlatform())
 	if platform == "" {
-		return &sdk.StepResult{Output: map[string]any{"error": "platform is required"}}, nil
+		return typedCIGenerateError("platform is required"), nil
 	}
 
-	outputDir := resolveString("output_dir", current, config)
+	outputDir := resolveTypedString(req.Input.GetOutputDir(), req.Config.GetOutputDir())
 	if outputDir == "" {
-		return &sdk.StepResult{Output: map[string]any{"error": "output_dir is required"}}, nil
+		return typedCIGenerateError("output_dir is required"), nil
 	}
 
 	newGen, ok := registry[platform]
 	if !ok {
-		return &sdk.StepResult{Output: map[string]any{"error": fmt.Sprintf("unknown platform %q", platform)}}, nil
+		return typedCIGenerateError(fmt.Sprintf("unknown platform %q", platform)), nil
 	}
 
 	opts := platforms.Options{
-		InfraConfig:   resolveStringDefault("infra_config", current, config, "infra.yaml"),
-		ProjectName:   resolveStringDefault("project_name", current, config, "my-project"),
-		Runner:        resolveStringDefault("runner", current, config, "self-hosted, Linux, X64"),
-		DefaultBranch: resolveStringDefault("default_branch", current, config, "main"),
+		InfraConfig:   resolveTypedStringDefault(req.Input.GetInfraConfig(), req.Config.GetInfraConfig(), "infra.yaml"),
+		ProjectName:   resolveTypedStringDefault(req.Input.GetProjectName(), req.Config.GetProjectName(), "my-project"),
+		Runner:        resolveTypedStringDefault(req.Input.GetRunner(), req.Config.GetRunner(), "self-hosted, Linux, X64"),
+		DefaultBranch: resolveTypedStringDefault(req.Input.GetDefaultBranch(), req.Config.GetDefaultBranch(), "main"),
 	}
 
 	gen := newGen()
 	files, err := gen.Generate(opts)
 	if err != nil {
-		return &sdk.StepResult{Output: map[string]any{"error": err.Error()}}, nil
+		return typedCIGenerateError(err.Error()), nil
 	}
 
 	written := make([]string, 0, len(files))
@@ -84,41 +69,40 @@ func (s *ciGenerateStep) Execute(ctx context.Context, _ map[string]any, _ map[st
 		fullPath := filepath.Join(outputDir, relPath)
 		dir := filepath.Dir(fullPath)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return &sdk.StepResult{Output: map[string]any{"error": fmt.Sprintf("mkdir %s: %v", dir, err)}}, nil
+			return typedCIGenerateError(fmt.Sprintf("mkdir %s: %v", dir, err)), nil
 		}
 		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
-			return &sdk.StepResult{Output: map[string]any{"error": fmt.Sprintf("write %s: %v", fullPath, err)}}, nil
+			return typedCIGenerateError(fmt.Sprintf("write %s: %v", fullPath, err)), nil
 		}
 		written = append(written, fullPath)
 	}
 
-	return &sdk.StepResult{Output: map[string]any{
-		"platform":      platform,
-		"output_dir":    outputDir,
-		"files_written": written,
-		"file_count":    len(written),
-	}}, nil
+	return &sdk.TypedStepResult[*contracts.CIGenerateOutput]{
+		Output: &contracts.CIGenerateOutput{
+			Platform:     platform,
+			OutputDir:    outputDir,
+			FilesWritten: written,
+			FileCount:    int32(len(written)),
+		},
+	}, nil
 }
 
-// resolveString reads a string value from current (runtime) first, then config.
-func resolveString(key string, current, config map[string]any) string {
-	if v, ok := current[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
+func typedCIGenerateError(message string) *sdk.TypedStepResult[*contracts.CIGenerateOutput] {
+	return &sdk.TypedStepResult[*contracts.CIGenerateOutput]{
+		Output: &contracts.CIGenerateOutput{Error: message},
 	}
-	if v, ok := config[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
 }
 
-// resolveStringDefault is resolveString with a fallback default.
-func resolveStringDefault(key string, current, config map[string]any, def string) string {
-	if v := resolveString(key, current, config); v != "" {
-		return v
+func resolveTypedString(input, config string) string {
+	if input != "" {
+		return input
+	}
+	return config
+}
+
+func resolveTypedStringDefault(input, config, def string) string {
+	if value := resolveTypedString(input, config); value != "" {
+		return value
 	}
 	return def
 }

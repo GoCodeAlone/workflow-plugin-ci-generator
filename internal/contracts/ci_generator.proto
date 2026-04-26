@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package workflow.plugins.ci_generator.v1;
+
+option go_package = "github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/contracts;contracts";
+
+message CIGenerateConfig {
+  string platform = 1;
+  string output_dir = 2;
+  string infra_config = 3;
+  string project_name = 4;
+  string runner = 5;
+  string default_branch = 6;
+}
+
+message CIGenerateInput {
+  string platform = 1;
+  string output_dir = 2;
+  string infra_config = 3;
+  string project_name = 4;
+  string runner = 5;
+  string default_branch = 6;
+}
+
+message CIGenerateOutput {
+  string platform = 1;
+  string output_dir = 2;
+  repeated string files_written = 3;
+  int32 file_count = 4;
+  string error = 5;
+}
