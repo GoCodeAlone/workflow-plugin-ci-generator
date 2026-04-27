@@ -3,7 +3,7 @@ module github.com/GoCodeAlone/workflow-plugin-ci-generator
 go 1.26.0
 
 require (
-	github.com/GoCodeAlone/workflow v0.19.0-alpha.4.0.20260426172551-e91187fcc9ba
+	github.com/GoCodeAlone/workflow v0.19.0
 	google.golang.org/protobuf v1.36.11
 )
 
