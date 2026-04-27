@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/contracts"
 	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/platforms"
@@ -65,7 +67,16 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 	}
 
 	written := make([]string, 0, len(files))
-	for relPath, content := range files {
+	relPaths := make([]string, 0, len(files))
+	for relPath := range files {
+		relPaths = append(relPaths, relPath)
+	}
+	sort.Strings(relPaths)
+	for _, relPath := range relPaths {
+		if err := validateRelativeOutputPath(relPath); err != nil {
+			return typedCIGenerateError(err.Error()), nil
+		}
+		content := files[relPath]
 		fullPath := filepath.Join(outputDir, relPath)
 		dir := filepath.Dir(fullPath)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -85,6 +96,21 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 			FileCount:    int32(len(written)),
 		},
 	}, nil
+}
+
+func validateRelativeOutputPath(relPath string) error {
+	if relPath == "" {
+		return fmt.Errorf("generated output path is empty")
+	}
+	if filepath.IsAbs(relPath) {
+		return fmt.Errorf("generated output path %q must be relative", relPath)
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(relPath), "/") {
+		if segment == ".." {
+			return fmt.Errorf("generated output path %q must not contain parent directory segments", relPath)
+		}
+	}
+	return nil
 }
 
 func typedCIGenerateError(message string) *sdk.TypedStepResult[*contracts.CIGenerateOutput] {
