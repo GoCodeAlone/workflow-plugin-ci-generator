@@ -1,0 +1,13 @@
+{
+  "version": "v1",
+  "contracts": [
+    {
+      "kind": "step",
+      "type": "step.ci_generate",
+      "mode": "strict",
+      "config": "workflow.plugins.ci_generator.v1.CIGenerateConfig",
+      "input": "workflow.plugins.ci_generator.v1.CIGenerateInput",
+      "output": "workflow.plugins.ci_generator.v1.CIGenerateOutput"
+    }
+  ]
+}
