@@ -19,7 +19,7 @@ CI/CD config generator for workflow projects — emits GitHub Actions, GitLab CI
 version: 1
 plugins:
   - name: workflow-plugin-ci-generator
-    version: 0.1.4
+    version: v0.1.3
     source: github.com/GoCodeAlone/workflow-plugin-ci-generator
 ```
 
