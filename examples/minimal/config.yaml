@@ -1,0 +1,18 @@
+# workflow-plugin-ci-generator minimal example
+# Generates CI/CD config files from a workflow project manifest.
+# Validate with: wfctl validate --skip-unknown-types examples/minimal/config.yaml
+
+workflows:
+  pipeline:
+    trigger:
+      type: http
+      config:
+        path: /ci/generate
+        method: POST
+    steps:
+      - name: generate-ci
+        type: step.ci_generate
+        config:
+          platform: github-actions
+          output_dir: .
+          project_name: my-workflow-project
