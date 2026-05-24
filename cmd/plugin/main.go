@@ -10,5 +10,5 @@ import (
 )
 
 func main() {
-	sdk.Serve(internal.NewCIGeneratorPlugin())
+	sdk.Serve(internal.NewCIGeneratorPlugin(), sdk.WithBuildVersion(sdk.ResolveBuildVersion(internal.Version)))
 }
