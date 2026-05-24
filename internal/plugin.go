@@ -14,7 +14,7 @@ import (
 
 // Version is set at build time via -ldflags
 // "-X github.com/GoCodeAlone/workflow-plugin-ci-generator/internal.Version=X.Y.Z"
-var Version = "dev"
+var Version = "0.0.0"
 
 // ciGeneratorPlugin implements sdk.PluginProvider, sdk.TypedStepProvider, and sdk.ContractProvider.
 type ciGeneratorPlugin struct{}
