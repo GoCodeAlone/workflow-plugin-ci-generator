@@ -11,6 +11,12 @@ message CIGenerateConfig {
   string project_name = 4;
   string runner = 5;
   string default_branch = 6;
+  // from_plan is an optional path to a CIPlan JSON file. When set, analysis is
+  // skipped and the plan is rendered directly from the file.
+  string from_plan = 7;
+  // phase_config is an optional path to a prerequisite workflow config that
+  // becomes the first DeployPhase (prereq) before the primary phase.
+  string phase_config = 8;
 }
 
 message CIGenerateInput {
@@ -20,6 +26,12 @@ message CIGenerateInput {
   string project_name = 4;
   string runner = 5;
   string default_branch = 6;
+  // from_plan is an optional path to a CIPlan JSON file. When set, analysis is
+  // skipped and the plan is rendered directly from the file.
+  string from_plan = 7;
+  // phase_config is an optional path to a prerequisite workflow config that
+  // becomes the first DeployPhase (prereq) before the primary phase.
+  string phase_config = 8;
 }
 
 message CIGenerateOutput {
