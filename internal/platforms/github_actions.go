@@ -10,6 +10,9 @@ import (
 type GitHubActionsGenerator struct{}
 
 // NewGitHubActionsGenerator returns a new GitHubActionsGenerator.
+// Retained as the template-reference fallback: github_actions now routes
+// through the cigen smart analyzer in generator.go, but this template
+// generator is kept for reference and potential reuse.
 func NewGitHubActionsGenerator() *GitHubActionsGenerator {
 	return &GitHubActionsGenerator{}
 }

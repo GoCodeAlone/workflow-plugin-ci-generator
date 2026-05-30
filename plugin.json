@@ -7,7 +7,7 @@
     "type": "external",
     "tier": "core",
     "private": false,
-    "minEngineVersion": "0.53.0",
+    "minEngineVersion": "0.67.0",
     "keywords": ["ci", "cd", "github-actions", "gitlab-ci", "jenkins", "circleci", "devops", "infrastructure"],
     "homepage": "https://github.com/GoCodeAlone/workflow-plugin-ci-generator",
     "repository": "https://github.com/GoCodeAlone/workflow-plugin-ci-generator",

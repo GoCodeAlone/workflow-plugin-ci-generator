@@ -10,6 +10,9 @@ import (
 type GitLabCIGenerator struct{}
 
 // NewGitLabCIGenerator returns a new GitLabCIGenerator.
+// Retained as the template-reference fallback: gitlab_ci now routes through
+// the cigen smart analyzer in generator.go, but this template generator is
+// kept for reference and potential reuse.
 func NewGitLabCIGenerator() *GitLabCIGenerator {
 	return &GitLabCIGenerator{}
 }
