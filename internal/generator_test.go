@@ -169,6 +169,99 @@ func TestExecuteCIGenerateGitLabCI_CigenMarkers(t *testing.T) {
 	}
 }
 
+// TestExecuteCIGenerateGitHubActions_AbsoluteConfigRendersRepoRelative verifies
+// that when infra_config is an absolute path (outside the repo checkout), the
+// rendered GitHub Actions workflow references a clean repo-relative config path
+// (base filename) — never an absolute path or one with a leading "/" or "..".
+// This guards against cigen.Analyze's filepath.Rel(cwd, abs) leaking an
+// out-of-tree path into the `--config` steps and `paths:` trigger filter.
+func TestExecuteCIGenerateGitHubActions_AbsoluteConfigRendersRepoRelative(t *testing.T) {
+	// Copy the representative config to an absolute tmp path outside the repo.
+	src, err := os.ReadFile(testdataConfig)
+	if err != nil {
+		t.Fatalf("read testdata: %v", err)
+	}
+	tmpDir := t.TempDir()
+	absConfig := filepath.Join(tmpDir, "deploy.yaml")
+	if err := os.WriteFile(absConfig, src, 0o644); err != nil {
+		t.Fatalf("write tmp config: %v", err)
+	}
+	if !filepath.IsAbs(absConfig) {
+		t.Fatalf("expected absolute config path, got %s", absConfig)
+	}
+
+	outputDir := t.TempDir()
+	result, err := ExecuteCIGenerate(context.Background(), sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]{
+		Config: &contracts.CIGenerateConfig{},
+		Input: &contracts.CIGenerateInput{
+			Platform:      PlatformGitHubActions,
+			OutputDir:     outputDir,
+			InfraConfig:   absConfig,
+			ProjectName:   "my-app",
+			DefaultBranch: "main",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCIGenerate: %v", err)
+	}
+	if result.Output.Error != "" {
+		t.Fatalf("unexpected error: %s", result.Output.Error)
+	}
+
+	combined := ""
+	for _, written := range result.Output.FilesWritten {
+		raw, err := os.ReadFile(written)
+		if err != nil {
+			t.Fatalf("read %s: %v", written, err)
+		}
+		combined += string(raw)
+	}
+	t.Logf("generated github_actions output (absolute infra_config):\n%s", combined)
+
+	// The config alias must collapse to the base filename.
+	if !strings.Contains(combined, "--config 'deploy.yaml'") {
+		t.Errorf("expected '--config '\\''deploy.yaml'\\''' (repo-relative base), output:\n%s", combined)
+	}
+	// The paths: trigger filter must reference the relative base name.
+	if !strings.Contains(combined, "- 'deploy.yaml'") {
+		t.Errorf("expected paths: entry \"- 'deploy.yaml'\", output:\n%s", combined)
+	}
+	// The absolute tmp path must NOT leak into the rendered workflow.
+	if strings.Contains(combined, absConfig) {
+		t.Errorf("absolute config path %q leaked into rendered output:\n%s", absConfig, combined)
+	}
+	// No "/" prefixed --config and no ".." escaping path.
+	if strings.Contains(combined, "--config '/") {
+		t.Errorf("rendered output contains an absolute --config path:\n%s", combined)
+	}
+	if strings.Contains(combined, "..") {
+		t.Errorf("rendered output contains a '..' escaping path:\n%s", combined)
+	}
+}
+
+// TestCleanConfigAlias exercises the alias normalization directly.
+func TestCleanConfigAlias(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"relative clean", "infra.yaml", "infra.yaml"},
+		{"relative nested", "deploy/app.yaml", "deploy/app.yaml"},
+		{"relative dot prefix", "./infra.yaml", "infra.yaml"},
+		{"absolute collapses to base", "/tmp/build123/deploy.yaml", "deploy.yaml"},
+		{"parent escape collapses to base", "../sibling/deploy.yaml", "deploy.yaml"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cleanConfigAlias(tc.in); got != tc.want {
+				t.Errorf("cleanConfigAlias(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestExecuteCIGenerateJenkins_TemplateUnchanged verifies that jenkins output
 // still comes from the template generator (unchanged).
 func TestExecuteCIGenerateJenkins_TemplateUnchanged(t *testing.T) {

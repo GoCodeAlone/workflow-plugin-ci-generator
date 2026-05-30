@@ -88,12 +88,21 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 				return typedCIGenerateError(fmt.Sprintf("parse from_plan %s: %v", fromPlan, err)), nil
 			}
 		} else {
-			// Run the smart analyzer.
+			// Run the smart analyzer. Pass repo-relative aliases so that an
+			// absolute or out-of-tree infra_config does not leak an absolute or
+			// "../"-escaping path into the rendered `wfctl infra apply --config`
+			// steps and the `paths:` trigger filter (which would never match a
+			// CI checkout). cigen.Analyze uses ConfigPathAlias/PhaseConfigAlias
+			// verbatim as the DeployPhase config paths when set.
 			opts := cigen.Options{
-				Runner:        runner,
-				DefaultBranch: defaultBranch,
-				Project:       projectName,
-				PhaseConfig:   phaseConfig,
+				Runner:          runner,
+				DefaultBranch:   defaultBranch,
+				Project:         projectName,
+				PhaseConfig:     phaseConfig,
+				ConfigPathAlias: cleanConfigAlias(infraConfig),
+			}
+			if phaseConfig != "" {
+				opts.PhaseConfigAlias = cleanConfigAlias(phaseConfig)
 			}
 			var err error
 			plan, err = cigen.Analyze([]string{infraConfig}, opts)
@@ -159,6 +168,26 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 			FileCount:    int32(len(written)),
 		},
 	}, nil
+}
+
+// cleanConfigAlias returns a repo-relative config path safe to embed in
+// generated CI steps and `paths:` trigger filters. An absolute path or one
+// containing a ".." segment (which would escape a CI checkout) is collapsed to
+// its base filename; otherwise the path is cleaned (normalizing "./", double
+// slashes, etc.) and returned as-is.
+func cleanConfigAlias(p string) string {
+	if p == "" {
+		return p
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Base(p)
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(p), "/") {
+		if segment == ".." {
+			return filepath.Base(p)
+		}
+	}
+	return filepath.Clean(p)
 }
 
 func validateRelativeOutputPath(relPath string) error {
