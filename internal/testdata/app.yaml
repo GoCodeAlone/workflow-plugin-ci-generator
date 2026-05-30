@@ -1,0 +1,28 @@
+modules:
+  - name: do-provider
+    type: iac.provider
+    config:
+      provider: digitalocean
+      token: ${DIGITALOCEAN_TOKEN}
+
+  - name: my-app
+    type: infra.container_service
+    config:
+      provider: do-provider
+      health_check:
+        http_path: /healthz
+      domains:
+        - domain: myapp.example.com
+          type: PRIMARY
+          zone: example.com
+      env_vars_secret:
+        APP_DB_URL: ${APP_DB_URL}
+        APP_SECRET: ${APP_SECRET}
+
+ci:
+  migrations:
+    - name: app
+      driver: golang-migrate
+      source_dir: migrations
+      database:
+        env: APP_DB_URL
