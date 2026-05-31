@@ -25,7 +25,7 @@ As of **v0.3.0** **all four platforms** — GitHub Actions, GitLab CI, Jenkins, 
 version: 1
 plugins:
   - name: workflow-plugin-ci-generator
-    version: v0.2.0
+    version: v0.3.0
     source: github.com/GoCodeAlone/workflow-plugin-ci-generator
 ```
 
