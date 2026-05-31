@@ -318,6 +318,7 @@ func TestExecuteCIGenerateJenkins_CigenMarkers(t *testing.T) {
 		"credentials('APP_DB_URL')",
 		"wfctl migrations up",
 		"wfctl infra apply",
+		"curl --fail --max-time 30 'https://myapp.example.com/healthz'", // smoke
 	} {
 		if !strings.Contains(combined, marker) {
 			t.Errorf("jenkins: cigen marker %q not found in output", marker)
@@ -337,8 +338,10 @@ func TestExecuteCIGenerateCircleCI_CigenMarkers(t *testing.T) {
 	for _, marker := range []string{
 		"version: 2.1",
 		"requires:",
+		"APP_DB_URL", // secret referenced (project env var header)
 		"wfctl migrations up",
 		"wfctl infra apply",
+		"curl --fail --max-time 30 'https://myapp.example.com/healthz'", // smoke
 	} {
 		if !strings.Contains(combined, marker) {
 			t.Errorf("circleci: cigen marker %q not found in output", marker)

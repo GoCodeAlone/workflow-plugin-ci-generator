@@ -33,9 +33,9 @@ var knownPlatforms = map[string]bool{
 }
 
 // ExecuteCIGenerate generates CI/CD config files for the specified platform.
-// For github_actions and gitlab_ci, the cigen smart analyzer is used
-// (analyze → CIPlan → render). For jenkins and circleci, the existing
-// template generators are used unchanged.
+// All four platforms (github_actions, gitlab_ci, jenkins, circleci) are
+// config-derived through the cigen analyze → CIPlan → render pipeline; the
+// legacy text/template generators were retired in #804 (see ADR 0044).
 func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]) (*sdk.TypedStepResult[*contracts.CIGenerateOutput], error) {
 	_ = ctx
 	platform := resolveTypedString(req.Input.GetPlatform(), req.Config.GetPlatform())
