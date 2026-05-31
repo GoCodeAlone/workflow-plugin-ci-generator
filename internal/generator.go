@@ -10,32 +10,19 @@ import (
 	"strings"
 
 	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/contracts"
-	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/platforms"
 	"github.com/GoCodeAlone/workflow/cigen"
 	sdk "github.com/GoCodeAlone/workflow/plugin/external/sdk"
 )
 
-// Platform constants.
+// Platform constants. All four platforms are config-derived through the cigen
+// analyze → CIPlan → render pipeline (the legacy text/template generators were
+// retired in #804; see ADR 0044 in the workflow repo).
 const (
 	PlatformGitHubActions = "github_actions"
 	PlatformGitLabCI      = "gitlab_ci"
 	PlatformJenkins       = "jenkins"
 	PlatformCircleCI      = "circleci"
 )
-
-// Generator defines the interface all platform generators implement.
-type Generator interface {
-	// Generate produces CI config files. Returns a map of relative output path → content.
-	Generate(opts platforms.Options) (map[string]string, error)
-}
-
-// registry maps platform names to template generator constructors.
-// Only jenkins and circleci are handled here; github_actions and gitlab_ci
-// are routed through the cigen smart analyzer in ExecuteCIGenerate.
-var registry = map[string]func() Generator{
-	PlatformJenkins:  func() Generator { return platforms.NewJenkinsGenerator() },
-	PlatformCircleCI: func() Generator { return platforms.NewCircleCIGenerator() },
-}
 
 // knownPlatforms is the complete set of supported platform names.
 var knownPlatforms = map[string]bool{
@@ -75,7 +62,7 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 	var files map[string]string
 
 	switch platform {
-	case PlatformGitHubActions, PlatformGitLabCI:
+	case PlatformGitHubActions, PlatformGitLabCI, PlatformJenkins, PlatformCircleCI:
 		var plan *cigen.CIPlan
 		if fromPlan != "" {
 			// Load a pre-computed CIPlan JSON directly.
@@ -117,24 +104,13 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 			files, err = cigen.RenderGitHubActions(plan)
 		case PlatformGitLabCI:
 			files, err = cigen.RenderGitLabCI(plan)
+		case PlatformJenkins:
+			files, err = cigen.RenderJenkins(plan)
+		case PlatformCircleCI:
+			files, err = cigen.RenderCircleCI(plan)
 		}
 		if err != nil {
 			return typedCIGenerateError(fmt.Sprintf("cigen render: %v", err)), nil
-		}
-
-	default:
-		// jenkins and circleci: template generators.
-		opts := platforms.Options{
-			InfraConfig:   infraConfig,
-			ProjectName:   projectName,
-			Runner:        runner,
-			DefaultBranch: defaultBranch,
-		}
-		gen := registry[platform]()
-		var err error
-		files, err = gen.Generate(opts)
-		if err != nil {
-			return typedCIGenerateError(err.Error()), nil
 		}
 	}
 
