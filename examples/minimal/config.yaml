@@ -1,6 +1,17 @@
 # workflow-plugin-ci-generator minimal example
-# Generates CI/CD config files from a workflow project manifest.
+# Exposes an HTTP endpoint that generates CI/CD config via step.ci_generate.
+# GitHub Actions / GitLab CI are config-derived (cigen); Jenkins / CircleCI are template-based.
 # Validate with: wfctl validate --skip-unknown-types examples/minimal/config.yaml
+
+modules:
+  - name: server
+    type: http.server
+    config:
+      address: ":8080"
+
+  - name: router
+    type: http.router
+    dependsOn: [server]
 
 workflows:
   pipeline:
@@ -13,6 +24,7 @@ workflows:
       - name: generate-ci
         type: step.ci_generate
         config:
-          platform: github-actions
+          platform: github_actions
+          infra_config: app.yaml   # the workflow app config cigen analyzes (GHA/GitLab)
           output_dir: .
           project_name: my-workflow-project
