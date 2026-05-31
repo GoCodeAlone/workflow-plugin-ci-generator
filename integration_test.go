@@ -2,10 +2,63 @@ package cigenerator_test
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal"
+	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/contracts"
 	"github.com/GoCodeAlone/workflow/wftest"
+
+	sdk "github.com/GoCodeAlone/workflow/plugin/external/sdk"
 )
+
+// TestIntegration_ExecuteCIGenerate_JenkinsCircleCI is the acceptance-#2
+// behavior proof for #804: it drives the REAL plugin entry point
+// (internal.ExecuteCIGenerate) through the external package boundary for the
+// jenkins and circleci platforms and asserts the written artifacts are
+// config-derived (secret wiring, `wfctl migrations up`, `wfctl infra apply`) and
+// free of the retired legacy stages (ADR 0044) — NOT a mocked step.
+func TestIntegration_ExecuteCIGenerate_JenkinsCircleCI(t *testing.T) {
+	cases := map[string][]string{
+		internal.PlatformJenkins:  {"pipeline {", "wfctl migrations up", "wfctl infra apply"},
+		internal.PlatformCircleCI: {"version: 2.1", "wfctl migrations up", "wfctl infra apply"},
+	}
+	for platform, markers := range cases {
+		result, err := internal.ExecuteCIGenerate(context.Background(), sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]{
+			Config: &contracts.CIGenerateConfig{},
+			Input: &contracts.CIGenerateInput{
+				Platform:    platform,
+				OutputDir:   t.TempDir(),
+				InfraConfig: "internal/testdata/app.yaml",
+			},
+		})
+		if err != nil {
+			t.Fatalf("%s: ExecuteCIGenerate: %v", platform, err)
+		}
+		if result.Output.Error != "" {
+			t.Fatalf("%s: %s", platform, result.Output.Error)
+		}
+		combined := ""
+		for _, w := range result.Output.FilesWritten {
+			raw, rerr := os.ReadFile(w)
+			if rerr != nil {
+				t.Fatalf("read %s: %v", w, rerr)
+			}
+			combined += string(raw) + "\n"
+		}
+		for _, m := range markers {
+			if !strings.Contains(combined, m) {
+				t.Errorf("%s: missing config-derived marker %q", platform, m)
+			}
+		}
+		for _, banned := range []string{"go test ./...", "wfctl deploy --image", "docker build"} {
+			if strings.Contains(combined, banned) {
+				t.Errorf("%s: found retired legacy marker %q", platform, banned)
+			}
+		}
+	}
+}
 
 // TestIntegration_GenerateGitHubActions verifies that a pipeline using
 // step.ci_generate executes and returns GitHub Actions output.

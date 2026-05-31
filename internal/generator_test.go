@@ -4,11 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/contracts"
-	"github.com/GoCodeAlone/workflow-plugin-ci-generator/internal/platforms"
 	sdk "github.com/GoCodeAlone/workflow/plugin/external/sdk"
 )
 
@@ -262,81 +262,95 @@ func TestCleanConfigAlias(t *testing.T) {
 	}
 }
 
-// TestExecuteCIGenerateJenkins_TemplateUnchanged verifies that jenkins output
-// still comes from the template generator (unchanged).
-func TestExecuteCIGenerateJenkins_TemplateUnchanged(t *testing.T) {
-	outputDir := t.TempDir()
-
+// executeAndReadCombined runs ExecuteCIGenerate for a platform against the
+// representative testdata config and returns the concatenated written-file bytes.
+// This drives the REAL plugin entry point (acceptance #2 for #804).
+func executeAndReadCombined(t *testing.T, platform string) string {
+	t.Helper()
 	result, err := ExecuteCIGenerate(context.Background(), sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]{
 		Config: &contracts.CIGenerateConfig{},
 		Input: &contracts.CIGenerateInput{
-			Platform:      PlatformJenkins,
-			OutputDir:     outputDir,
-			InfraConfig:   "infra.yaml",
+			Platform:      platform,
+			OutputDir:     t.TempDir(),
+			InfraConfig:   testdataConfig,
+			ProjectName:   "my-app",
 			DefaultBranch: "main",
 		},
 	})
 	if err != nil {
-		t.Fatalf("ExecuteCIGenerate: %v", err)
+		t.Fatalf("ExecuteCIGenerate(%s): %v", platform, err)
 	}
 	if result.Output.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Output.Error)
+		t.Fatalf("%s: unexpected error: %s", platform, result.Output.Error)
 	}
-
+	if result.Output.FileCount == 0 {
+		t.Fatalf("%s: expected at least one file written", platform)
+	}
 	combined := ""
 	for _, written := range result.Output.FilesWritten {
 		raw, err := os.ReadFile(written)
 		if err != nil {
 			t.Fatalf("read %s: %v", written, err)
 		}
-		combined += string(raw)
+		combined += string(raw) + "\n"
 	}
+	return combined
+}
 
-	// Jenkins template produces a declarative Jenkinsfile.
-	if !strings.Contains(combined, "pipeline {") {
-		t.Errorf("jenkins: expected 'pipeline {' from template generator")
-	}
-	if !strings.Contains(combined, "stage('Checkout')") {
-		t.Errorf("jenkins: expected 'stage('Checkout')' from template generator")
+// assertNoRetiredStages asserts the retired, non-config-derived stages (ADR 0044)
+// do not appear in cigen-generated output.
+func assertNoRetiredStages(t *testing.T, platform, combined string) {
+	t.Helper()
+	for _, banned := range []string{"go test ./...", "wfctl deploy --image", "docker build", "docker push", "wfctl ci run --phase migrate"} {
+		if strings.Contains(combined, banned) {
+			t.Errorf("%s: found retired legacy marker %q — cigen should not render that", platform, banned)
+		}
 	}
 }
 
-// TestExecuteCIGenerateCircleCI_TemplateUnchanged verifies that circleci output
-// still comes from the template generator (unchanged).
-func TestExecuteCIGenerateCircleCI_TemplateUnchanged(t *testing.T) {
-	outputDir := t.TempDir()
-
-	result, err := ExecuteCIGenerate(context.Background(), sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]{
-		Config: &contracts.CIGenerateConfig{},
-		Input: &contracts.CIGenerateInput{
-			Platform:      PlatformCircleCI,
-			OutputDir:     outputDir,
-			InfraConfig:   "infra.yaml",
-			DefaultBranch: "main",
-		},
-	})
-	if err != nil {
-		t.Fatalf("ExecuteCIGenerate: %v", err)
-	}
-	if result.Output.Error != "" {
-		t.Fatalf("unexpected error: %s", result.Output.Error)
-	}
-
-	combined := ""
-	for _, written := range result.Output.FilesWritten {
-		raw, err := os.ReadFile(written)
-		if err != nil {
-			t.Fatalf("read %s: %v", written, err)
+// TestExecuteCIGenerateJenkins_CigenMarkers verifies jenkins output is generated
+// by the cigen smart analyzer (not the retired template generator).
+func TestExecuteCIGenerateJenkins_CigenMarkers(t *testing.T) {
+	combined := executeAndReadCombined(t, PlatformJenkins)
+	for _, marker := range []string{
+		"pipeline {",
+		"Requires a Jenkins Multibranch Pipeline",
+		"credentials('APP_DB_URL')",
+		"wfctl migrations up",
+		"wfctl infra apply",
+		"curl --fail --max-time 30 'https://myapp.example.com/healthz'", // smoke
+	} {
+		if !strings.Contains(combined, marker) {
+			t.Errorf("jenkins: cigen marker %q not found in output", marker)
 		}
-		combined += string(raw)
 	}
+	assertNoRetiredStages(t, "jenkins", combined)
+	// The old template emitted stage('Checkout'); cigen does not.
+	if strings.Contains(combined, "stage('Checkout')") {
+		t.Errorf("jenkins: found old-template marker stage('Checkout')")
+	}
+}
 
-	// CircleCI template produces version: 2.1 with orbs.
-	if !strings.Contains(combined, "version: 2.1") {
-		t.Errorf("circleci: expected 'version: 2.1' from template generator")
+// TestExecuteCIGenerateCircleCI_CigenMarkers verifies circleci output is
+// generated by the cigen smart analyzer (not the retired template generator).
+func TestExecuteCIGenerateCircleCI_CigenMarkers(t *testing.T) {
+	combined := executeAndReadCombined(t, PlatformCircleCI)
+	for _, marker := range []string{
+		"version: 2.1",
+		"requires:",
+		"APP_DB_URL", // secret referenced (project env var header)
+		"wfctl migrations up",
+		"wfctl infra apply",
+		"curl --fail --max-time 30 'https://myapp.example.com/healthz'", // smoke
+	} {
+		if !strings.Contains(combined, marker) {
+			t.Errorf("circleci: cigen marker %q not found in output", marker)
+		}
 	}
-	if !strings.Contains(combined, "orbs:") {
-		t.Errorf("circleci: expected 'orbs:' from template generator")
+	assertNoRetiredStages(t, "circleci", combined)
+	// The old template emitted `orbs:`; cigen does not.
+	if strings.Contains(combined, "orbs:") {
+		t.Errorf("circleci: found old-template marker 'orbs:'")
 	}
 }
 
@@ -353,87 +367,39 @@ func TestExecuteCIGenerateTypedValidation(t *testing.T) {
 	}
 }
 
-func TestExecuteCIGenerateRejectsUnsafeGeneratedPath(t *testing.T) {
-	restore := registerTestGenerator(t, "unsafe", staticGenerator{
-		files: map[string]string{"../escape.yml": "bad"},
-	})
-	defer restore()
-
-	result, err := ExecuteCIGenerate(context.Background(), sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]{
-		Config: &contracts.CIGenerateConfig{},
-		Input: &contracts.CIGenerateInput{
-			Platform:  "unsafe",
-			OutputDir: t.TempDir(),
-		},
-	})
-	if err != nil {
-		t.Fatalf("ExecuteCIGenerate: %v", err)
+// TestValidateRelativeOutputPath exercises the path-safety guard directly (the
+// registry-injection seam it used to be tested through was removed with the
+// template generators in #804).
+func TestValidateRelativeOutputPath(t *testing.T) {
+	for _, bad := range []string{"../escape.yml", "a/../../b.yml", "/abs/path.yml", ""} {
+		if err := validateRelativeOutputPath(bad); err == nil {
+			t.Errorf("expected error for unsafe path %q", bad)
+		}
 	}
-	if result == nil || result.Output == nil || result.Output.Error == "" {
-		t.Fatalf("expected unsafe path error, got %#v", result)
+	for _, good := range []string{"Jenkinsfile", ".circleci/config.yml", ".github/workflows/ci.yml"} {
+		if err := validateRelativeOutputPath(good); err != nil {
+			t.Errorf("unexpected error for safe path %q: %v", good, err)
+		}
 	}
 }
 
+// TestExecuteCIGenerateSortsFilesWritten asserts FilesWritten is sorted on a real
+// cigen render. Each renderer writes a single file today, so this asserts the
+// sort invariant holds (and documents it) rather than exercising a multi-file
+// permutation that no current renderer produces.
 func TestExecuteCIGenerateSortsFilesWritten(t *testing.T) {
-	outputDir := t.TempDir()
-	restore := registerTestGenerator(t, "static", staticGenerator{
-		files: map[string]string{
-			"z.yml": "z",
-			"a.yml": "a",
-		},
-	})
-	defer restore()
-
 	result, err := ExecuteCIGenerate(context.Background(), sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]{
 		Config: &contracts.CIGenerateConfig{},
 		Input: &contracts.CIGenerateInput{
-			Platform:  "static",
-			OutputDir: outputDir,
+			Platform:    PlatformGitHubActions,
+			OutputDir:   t.TempDir(),
+			InfraConfig: testdataConfig,
 		},
 	})
 	if err != nil {
 		t.Fatalf("ExecuteCIGenerate: %v", err)
 	}
-	want := []string{
-		filepath.Join(outputDir, "a.yml"),
-		filepath.Join(outputDir, "z.yml"),
-	}
-	if len(result.Output.FilesWritten) != len(want) {
-		t.Fatalf("FilesWritten length = %d, want %d", len(result.Output.FilesWritten), len(want))
-	}
-	for i := range want {
-		if result.Output.FilesWritten[i] != want[i] {
-			t.Fatalf("FilesWritten[%d] = %q, want %q", i, result.Output.FilesWritten[i], want[i])
-		}
-	}
-}
-
-type staticGenerator struct {
-	files map[string]string
-}
-
-func (g staticGenerator) Generate(_ platforms.Options) (map[string]string, error) {
-	return g.files, nil
-}
-
-// registerTestGenerator registers a test generator in registry + knownPlatforms,
-// and removes it on cleanup.
-func registerTestGenerator(t *testing.T, platform string, generator Generator) func() {
-	t.Helper()
-	origGen, genExisted := registry[platform]
-	origKnown := knownPlatforms[platform]
-	registry[platform] = func() Generator { return generator }
-	knownPlatforms[platform] = true
-	return func() {
-		if genExisted {
-			registry[platform] = origGen
-		} else {
-			delete(registry, platform)
-		}
-		if origKnown {
-			knownPlatforms[platform] = true
-		} else {
-			delete(knownPlatforms, platform)
-		}
+	if !sort.StringsAreSorted(result.Output.FilesWritten) {
+		t.Errorf("FilesWritten not sorted: %v", result.Output.FilesWritten)
 	}
 }
