@@ -54,7 +54,7 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 
 	infraConfig := resolveTypedStringDefault(req.Input.GetInfraConfig(), req.Config.GetInfraConfig(), "infra.yaml")
 	projectName := resolveTypedStringDefault(req.Input.GetProjectName(), req.Config.GetProjectName(), "my-project")
-	runner := resolveTypedStringDefault(req.Input.GetRunner(), req.Config.GetRunner(), "self-hosted, Linux, X64")
+	runner := resolveTypedStringDefault(req.Input.GetRunner(), req.Config.GetRunner(), "ubuntu-latest")
 	defaultBranch := resolveTypedStringDefault(req.Input.GetDefaultBranch(), req.Config.GetDefaultBranch(), "main")
 	fromPlan := resolveTypedString(req.Input.GetFromPlan(), req.Config.GetFromPlan())
 	phaseConfig := resolveTypedString(req.Input.GetPhaseConfig(), req.Config.GetPhaseConfig())
@@ -111,6 +111,9 @@ func ExecuteCIGenerate(ctx context.Context, req sdk.TypedStepRequest[*contracts.
 		}
 		if err != nil {
 			return typedCIGenerateError(fmt.Sprintf("cigen render: %v", err)), nil
+		}
+		if findings := cigen.ValidateRenderedFiles(platform, files); len(findings) > 0 {
+			return typedCIGenerateError(fmt.Sprintf("cigen validate %s: %s", platform, strings.Join(cigen.ValidationMessages(findings), "; "))), nil
 		}
 	}
 

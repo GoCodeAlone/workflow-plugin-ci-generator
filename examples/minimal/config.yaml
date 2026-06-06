@@ -1,6 +1,6 @@
 # workflow-plugin-ci-generator minimal example
 # Exposes an HTTP endpoint that generates CI/CD config via step.ci_generate.
-# GitHub Actions / GitLab CI are config-derived (cigen); Jenkins / CircleCI are template-based.
+# GitHub Actions, GitLab CI, Jenkins, and CircleCI are config-derived (cigen).
 # Validate with: wfctl validate --skip-unknown-types examples/minimal/config.yaml
 
 modules:
