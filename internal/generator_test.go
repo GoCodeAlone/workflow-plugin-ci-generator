@@ -367,6 +367,32 @@ func TestExecuteCIGenerateTypedValidation(t *testing.T) {
 	}
 }
 
+func TestExecuteCIGenerateValidatesRenderedArtifacts(t *testing.T) {
+	outputDir := t.TempDir()
+	planPath := filepath.Join(outputDir, "bad-plan.json")
+	if err := os.WriteFile(planPath, []byte(`{"project":"bad","phases":[]}`), 0o644); err != nil {
+		t.Fatalf("write bad plan: %v", err)
+	}
+
+	result, err := ExecuteCIGenerate(context.Background(), sdk.TypedStepRequest[*contracts.CIGenerateConfig, *contracts.CIGenerateInput]{
+		Config: &contracts.CIGenerateConfig{},
+		Input: &contracts.CIGenerateInput{
+			Platform:  PlatformGitHubActions,
+			OutputDir: outputDir,
+			FromPlan:  planPath,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCIGenerate: %v", err)
+	}
+	if result == nil || result.Output == nil {
+		t.Fatal("expected typed output")
+	}
+	if !strings.Contains(result.Output.Error, "cigen validate github_actions") {
+		t.Fatalf("expected rendered validation error, got %#v", result.Output.Error)
+	}
+}
+
 // TestValidateRelativeOutputPath exercises the path-safety guard directly (the
 // registry-injection seam it used to be tested through was removed with the
 // template generators in #804).
